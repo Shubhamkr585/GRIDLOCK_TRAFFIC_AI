@@ -2,64 +2,36 @@ import pandas as pd
 import numpy as np
 import lightgbm as lgb
 import joblib
-import pygeohash as pgh
 import os
 from sklearn.model_selection import train_test_split
 from config import config
 
-def calculate_cim(row):
-    """
-    Calculate Congestion-Impact Multiplier based on demand.
-    Since we don't have RoadType yet, we use a basic proxy logic for severity.
-    """
-    base_demand = row['demand']
-    
-    # Placeholder for OSM API logic (Aman will implement)
-    # For now, severity score is directly proportional to demand
-    return base_demand * 1.2
-
-def process_raw_dataset(file_path):
-    print(f"Loading 104MB raw violation data from {file_path}...")
-    
-    # Use chunking if memory is an issue, but 104MB should easily fit in RAM
-    df = pd.read_csv(file_path, usecols=['latitude', 'longitude', 'created_datetime'])
-    
-    print("Dropping missing coordinates...")
-    df = df.dropna(subset=['latitude', 'longitude', 'created_datetime'])
-    
-    print("Computing Geohashes (Precision 6 = ~1.2km x 600m)...")
-    df['geohash'] = df.apply(lambda row: pgh.encode(row['latitude'], row['longitude'], precision=6), axis=1)
-    
-    print("Extracting Temporal Features...")
-    df['created_datetime'] = pd.to_datetime(df['created_datetime'], errors='coerce')
-    df = df.dropna(subset=['created_datetime'])
-    df['day_of_week'] = df['created_datetime'].dt.dayofweek
-    df['hour'] = df['created_datetime'].dt.hour
-    
-    print("Aggregating into Demand (Hotspots)...")
-    # Group by location and time to get 'demand' (count of violations)
-    aggregated_df = df.groupby(['geohash', 'day_of_week', 'hour']).size().reset_index(name='demand')
-    
-    return aggregated_df
-
-def load_and_prepare_data(file_path):
-    df = process_raw_dataset(file_path)
-    
-    print("Calculating Congestion Impact Multiplier (Severity Score)...")
-    df['severity_score'] = df.apply(calculate_cim, axis=1)
-    
-    # Convert categorical to category type for LightGBM
-    df['geohash'] = df['geohash'].astype('category')
+def train_model(input_csv='enriched_training_data.csv'):
+    if not os.path.exists(input_csv):
+        print(f"Error: {input_csv} not found. Please run the full pipeline (data_ingestion -> api_osm -> api_weather -> feature_engineering) first.")
+        return
         
-    features = ['geohash', 'day_of_week', 'hour']
+    print(f"Loading enriched dataset from {input_csv}...")
+    df = pd.read_csv(input_csv)
+    
+    # Feature Selection
+    # Drop geohash if there are too many bins, or convert to categorical
+    df['geohash'] = df['geohash'].astype('category')
+    
+    if 'RoadType' in df.columns:
+        df['RoadType'] = df['RoadType'].astype('category')
+    if 'Weather' in df.columns:
+        df['Weather'] = df['Weather'].astype('category')
+        
+    features = [col for col in ['geohash', 'day_of_week', 'hour', 'NumberofLanes', 'RoadType', 'Temperature', 'Weather'] if col in df.columns]
     target = 'severity_score'
     
-    return df[features], df[target]
-
-def train_model():
-    X, y = load_and_prepare_data(config.DATASET_PATH)
+    print(f"Total training points: {len(df)}")
+    print(f"Features used: {features}")
     
-    print(f"Total aggregated Hotspot data points: {len(X)}")
+    X = df[features]
+    y = df[target]
+    
     print("Splitting dataset...")
     X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.2, random_state=42)
     
