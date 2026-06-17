@@ -1,0 +1,10 @@
+pandas
+numpy
+lightgbm
+scikit-learn
+pygeohash
+requests
+python-dotenv
+fastapi
+uvicorn
+pydantic

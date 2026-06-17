@@ -1,3 +1,21 @@
-node_modules/
+# Virtual Environments
+venv/
+env/
 .env
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Datasets (Prevent uploading 100MB+ files to GitHub)
+dataset/
+*.csv
+*.xlsx
+
+# Model Files (Optional, but usually ignored)
+*.pkl
+
+# Logs and OS files
+*.log
 .DS_Store
+node_modules/
