@@ -11,3 +11,15 @@ services:
       - ./dataset:/dataset
     environment:
       - DATASET_PATH=/dataset/jan to may police violation_anonymized791b166 (1).csv
+
+  backend:
+    build: .
+    container_name: gridlock-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - ML_SERVICE_URL=http://ml-engine:8000
+      - MONGO_URI=mongodb+srv://abhishekkumarsaw414_db_user:C5Gkvydx75JxAGYS@cluster0.xth93kh.mongodb.net/ # Replace with real URI
+      - PORT=5000
+    depends_on:
+      - ml-engine

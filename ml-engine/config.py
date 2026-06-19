@@ -1,27 +1,45 @@
-import os
-from dotenv import load_dotenv
+# Configuration Settings for Parking Intelligence Platform
 
-load_dotenv()
+# DBSCAN Spatial Clustering Hyperparameters
+# eps is in degrees (approx 50 meters in lat/long near equator)
+# This controls the geographic radius of a parking hotspot
+DBSCAN_EPS = 0.0005 
+DBSCAN_MIN_SAMPLES = 5
 
-class Config:
-    # Dataset path (assuming it sits in the project root)
-    DATASET_PATH = os.getenv("DATASET_PATH", "../dataset/train.csv")
-    
-    # OSM Overpass API URL
-    OVERPASS_URL = "http://overpass-api.de/api/interpreter"
-    
-    # Open-Meteo API URL
-    OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
-    
-    # LightGBM Params
-    LGBM_PARAMS = {
-        'objective': 'regression',
-        'metric': 'rmse',
-        'boosting_type': 'gbdt',
-        'learning_rate': 0.05,
-        'num_leaves': 31,
-        'max_depth': -1,
-        'feature_fraction': 0.8
-    }
+# Categorical Encodings (Vehicle Severity)
+VEHICLE_WEIGHTS = {
+    'two wheeler': 1,
+    'auto rickshaw': 2,
+    'car': 3,
+    'suv': 4,
+    'bus': 5,
+    'truck': 6,
+    'tanker': 7
+}
 
-config = Config()
+DEFAULT_VEHICLE_WEIGHT = 2
+
+# Categorical Encodings (Violation Severity)
+VIOLATION_WEIGHTS = {
+    'minor violation': 1,
+    'wrong parking': 3,
+    'improper parking': 3,
+    'footpath parking': 4,
+    'footpath encroachment': 4,
+    'roadside obstruction': 4,
+    'blocking junction': 5,
+    'no parking zone': 5
+}
+
+DEFAULT_VIOLATION_WEIGHT = 3
+
+# File Paths
+RAW_DATA_PATH = '../dataset/violations.csv'
+PROCESSED_DATA_PATH = 'data_processed.csv'
+AGGREGATED_DATA_PATH = 'data_aggregated.csv'
+CLUSTER_GEO_PATH = 'cluster_centroids.csv'
+IMPACT_SCORES_PATH = 'impact_scores.csv'
+MODEL_SAVE_PATH = 'best_parking_model.pkl'
+
+# Random State for reproducibility
+RANDOM_STATE = 42
