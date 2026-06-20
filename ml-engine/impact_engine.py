@@ -4,23 +4,27 @@ from scipy.spatial import ConvexHull
 import config
 
 def normalize_score(series):
-    """Normalize a pandas Series to exactly [0, 100]."""
-    min_val = series.min()
-    max_val = series.max()
-    if max_val == min_val:
-        return pd.Series(50, index=series.index)
-    return ((series - min_val) / (max_val - min_val)) * 100.0
+    """Normalize a pandas Series using Exponential Asymptotic Scaling to [0, 100)."""
+    scale_factor = series.std()
+    if pd.isna(scale_factor) or scale_factor == 0:
+        if series.mean() == 0:
+            return pd.Series(0, index=series.index)
+        scale_factor = series.mean()
+        
+    return 100.0 * (1.0 - np.exp(-series / scale_factor))
 
 def calculate_cluster_area(group):
     coords = group[['latitude', 'longitude']].values
+    min_area = np.pi * (config.DBSCAN_EPS ** 2)
     if len(coords) < 3:
         # Minimum synthetic area for clusters with <3 points based on EPS radius
-        return np.pi * (config.DBSCAN_EPS ** 2)
+        return min_area
     try:
         hull = ConvexHull(coords)
-        return hull.volume if hull.volume > 0 else np.pi * (config.DBSCAN_EPS ** 2)
+        # In 2D, ConvexHull.volume returns the area, ConvexHull.area returns the perimeter
+        return max(hull.volume, min_area)
     except:
-        return np.pi * (config.DBSCAN_EPS ** 2)
+        return min_area
 
 def calculate_pii(df):
     print("Calculating Parking Impact Index (PII)...")
@@ -28,10 +32,11 @@ def calculate_pii(df):
     total_observation_days = df['created_datetime'].dt.date.nunique()
     if total_observation_days == 0: total_observation_days = 1
     
-    # 1. Density Score
+    # 1. Density Score (using log transform to handle high skew)
     cluster_counts = df.groupby('Cluster_ID').size()
     areas = df.groupby('Cluster_ID').apply(calculate_cluster_area)
     raw_density = cluster_counts / areas
+    log_density = np.log1p(raw_density)
     
     # 2. Peak Hour Score
     def is_peak(h):
@@ -52,9 +57,8 @@ def calculate_pii(df):
     raw_violation = df.groupby('Cluster_ID')['Violation_Severity'].mean()
     
     # 6. Junction Criticality Score
-    # We assume it's a junction if junction_name is not NaN or empty
     def at_junction(val):
-        if pd.isna(val) or str(val).strip() == '' or str(val).lower() == 'unknown':
+        if pd.isna(val) or str(val).strip() == '' or str(val).lower() in ['unknown', 'no junction']:
             return 0
         return 1
     df['is_junction'] = df['junction_name'].apply(at_junction)
@@ -66,15 +70,15 @@ def calculate_pii(df):
     pii_df['Total_Violations'] = cluster_counts
     
     # Normalize Component Scores strictly to [0, 100]
-    pii_df['Density_Score'] = normalize_score(raw_density)
+    pii_df['Density_Score'] = normalize_score(log_density)
     pii_df['Peak_Hour_Score'] = normalize_score(raw_peak)
     pii_df['Persistence_Score'] = normalize_score(raw_persistence)
     pii_df['Vehicle_Impact_Score'] = normalize_score(raw_vehicle)
     pii_df['Violation_Severity_Score'] = normalize_score(raw_violation)
     pii_df['Junction_Criticality_Score'] = normalize_score(raw_junction)
     
-    # Final PII Calculation
-    pii_df['PII'] = (
+    # Final PII Calculation (weighted sum, then normalized to exactly [0, 100])
+    raw_pii = (
         (0.30 * pii_df['Density_Score']) +
         (0.20 * pii_df['Peak_Hour_Score']) +
         (0.15 * pii_df['Persistence_Score']) +
@@ -82,6 +86,7 @@ def calculate_pii(df):
         (0.10 * pii_df['Violation_Severity_Score']) +
         (0.10 * pii_df['Junction_Criticality_Score'])
     )
+    pii_df['PII'] = normalize_score(raw_pii)
     
     # Severity Classification
     def get_severity(score):

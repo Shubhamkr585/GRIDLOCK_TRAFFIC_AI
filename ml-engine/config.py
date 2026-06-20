@@ -6,6 +6,32 @@
 DBSCAN_EPS = 0.0005 
 DBSCAN_MIN_SAMPLES = 5
 
+# Raw vehicle type to standard category mapping
+VEHICLE_MAPPING = {
+    'scooter': 'two wheeler',
+    'motor cycle': 'two wheeler',
+    'moped': 'two wheeler',
+    'passenger auto': 'auto rickshaw',
+    'goods auto': 'auto rickshaw',
+    'car': 'car',
+    'jeep': 'car',
+    'van': 'car',
+    'maxi-cab': 'suv',
+    'suv': 'suv',
+    'private bus': 'bus',
+    'bus (bmtc/ksrtc)': 'bus',
+    'school vehicle': 'bus',
+    'tourist bus': 'bus',
+    'factory bus': 'bus',
+    'lgv': 'truck',
+    'tempo': 'truck',
+    'lorry/goods vehicle': 'truck',
+    'hgv': 'truck',
+    'mini lorry': 'truck',
+    'tractor': 'truck',
+    'tanker': 'tanker'
+}
+
 # Categorical Encodings (Vehicle Severity)
 VEHICLE_WEIGHTS = {
     'two wheeler': 1,
@@ -28,7 +54,16 @@ VIOLATION_WEIGHTS = {
     'footpath encroachment': 4,
     'roadside obstruction': 4,
     'blocking junction': 5,
-    'no parking zone': 5
+    'no parking zone': 5,
+    # Expanded mappings for raw dataset values
+    'no parking': 5,
+    'parking in a main road': 4,
+    'parking on footpath': 4,
+    'double parking': 3,
+    'parking near bustop/school/hospital etc': 3,
+    'parking opposite to another parked vehicle': 3,
+    'defective number plate': 1,
+    'using black film/other materials': 1
 }
 
 DEFAULT_VIOLATION_WEIGHT = 3
@@ -40,6 +75,8 @@ AGGREGATED_DATA_PATH = 'data_aggregated.csv'
 CLUSTER_GEO_PATH = 'cluster_centroids.csv'
 IMPACT_SCORES_PATH = 'impact_scores.csv'
 MODEL_SAVE_PATH = 'best_parking_model.pkl'
+LE_JUNCTION_PATH = 'le_junction.pkl'
+LE_POLICE_PATH = 'le_police.pkl'
 
 # Random State for reproducibility
 RANDOM_STATE = 42

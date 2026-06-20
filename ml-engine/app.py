@@ -10,6 +10,65 @@ import config
 
 st.set_page_config(page_title="AI Parking Intelligence Platform", layout="wide", initial_sidebar_state="expanded")
 
+# Inject Custom Premium CSS
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+    
+    /* Font Family */
+    html, body, [class*="css"] {
+        font-family: 'Outfit', sans-serif;
+    }
+    
+    /* Premium Gradient Headers */
+    .title-container {
+        background: linear-gradient(135deg, #FF4B4B 0%, #FF8C00 100%);
+        padding: 25px;
+        border-radius: 12px;
+        color: white;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 15px rgba(255, 75, 75, 0.2);
+    }
+    
+    .title-text {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin: 0;
+        color: white !important;
+    }
+    
+    .subtitle-text {
+        font-size: 1.1rem;
+        font-weight: 300;
+        margin: 5px 0 0 0;
+        opacity: 0.9;
+    }
+    
+    /* KPI Cards */
+    .card {
+        background-color: #ffffff;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #eaeaea;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        margin-bottom: 20px;
+    }
+    .card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+    }
+    
+    /* Dark mode adjustments for card text if theme is dark */
+    @media (prefers-color-scheme: dark) {
+        .card {
+            background-color: #1e1e1e;
+            border-color: #333333;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Helper Functions ---
 @st.cache_data
 def load_impact_data():
@@ -36,8 +95,12 @@ def load_model():
         return None
 
 # --- Main App ---
-st.title("🚦 AI-Driven Parking Intelligence Platform")
-st.markdown("Dual-Engine Architecture: Impact Assessment & Violation Prediction")
+st.markdown("""
+<div class="title-container">
+    <h1 class="title-text">🚦 AI-Driven Parking Intelligence Platform</h1>
+    <p class="subtitle-text">Dual-Engine Architecture: Impact Assessment & Violation Prediction</p>
+</div>
+""", unsafe_allow_html=True)
 
 impact_data = load_impact_data()
 model_data = load_model()
@@ -98,7 +161,29 @@ with tab2:
     st.header("Future Violation Hotspot Forecast")
     
     if model_data and not impact_data.empty:
-        st.success(f"**Active Model:** {model_data['model_name']} | **R² Score:** {model_data['r2']:.4f} | **RMSE:** {model_data['rmse']:.4f}")
+        # Beautiful KPI Metrics for Model Performance
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            st.markdown(f"""
+            <div class="card">
+                <div style="font-size:0.9rem;color:#7f8c8d;font-weight:600;">ACTIVE ML MODEL</div>
+                <div style="font-size:1.8rem;font-weight:800;color:#2c3e50;">{model_data['model_name']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_m2:
+            st.markdown(f"""
+            <div class="card">
+                <div style="font-size:0.9rem;color:#7f8c8d;font-weight:600;">MODEL R² SCORE</div>
+                <div style="font-size:1.8rem;font-weight:800;color:#2ecc71;">{model_data['r2']:.4f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_m3:
+            st.markdown(f"""
+            <div class="card">
+                <div style="font-size:0.9rem;color:#7f8c8d;font-weight:600;">ROOT MEAN SQUARED ERROR (RMSE)</div>
+                <div style="font-size:1.8rem;font-weight:800;color:#e74c3c;">{model_data['rmse']:.4f}</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         # User Inputs
         col_input1, col_input2, col_input3 = st.columns(3)
@@ -116,38 +201,55 @@ with tab2:
                 model = model_data['model']
                 features = model_data['features']
                 
-                # Build inference dataframe for all clusters
-                inference_df = pd.DataFrame({'Cluster_ID': impact_data['Cluster_ID']})
-                inference_df['Hour'] = selected_hour
-                inference_df['DayOfWeek'] = selected_day
-                inference_df['Month'] = selected_month
-                inference_df['Weekend_Flag'] = is_weekend
+                # We need the advanced temporal features (lags, density) from the aggregated dataset
+                try:
+                    agg_df = pd.read_csv(config.AGGREGATED_DATA_PATH)
+                    # Get the most recent row for each cluster to use its lags as the 'current' state
+                    latest_lags = agg_df.sort_values('Date_Hour').groupby('Cluster_ID').tail(1)[
+                        ['Cluster_ID', 'cluster_centroid_lat', 'cluster_centroid_lon',
+                         'violations_lag_1h', 'rolling_3h_mean', 
+                         'avg_vehicle_weight', 'antigravity_repulsion_factor']
+                    ]
+                    inference_df = pd.DataFrame({'Cluster_ID': impact_data['Cluster_ID']})
+                    inference_df = inference_df.merge(latest_lags, on='Cluster_ID', how='left')
+                except Exception as e:
+                    st.error(f"Error loading aggregated data: {e}")
+                    inference_df = pd.DataFrame()
                 
-                # Mock average severity and junction info for inference based on historical means
-                inference_df['Vehicle_Severity'] = config.DEFAULT_VEHICLE_WEIGHT
-                inference_df['Violation_Severity'] = config.DEFAULT_VIOLATION_WEIGHT
-                inference_df['junction_encoded'] = 0
-                inference_df['police_encoded'] = 0
+                # Add Cyclical Time Encoding based on user selection
+                inference_df['hour_sin'] = np.sin(2 * np.pi * selected_hour / 24)
+                inference_df['hour_cos'] = np.cos(2 * np.pi * selected_hour / 24)
+                
+                # Merge the text features from impact_data for interpretability
+                inference_df = inference_df.merge(
+                    impact_data[['Cluster_ID', 'violation_type', 'police_station']], 
+                    on='Cluster_ID', 
+                    how='left'
+                )
+                
+                # Fallback to zero for any NaNs
+                inference_df = inference_df.fillna(0)
                 
                 # Predict
                 X_infer = inference_df[features]
                 preds = model.predict(X_infer)
                 
-                inference_df['Predicted_Count'] = np.maximum(0, np.round(preds))
+                inference_df['Target_Severity'] = np.clip(np.round(preds, 2), 0, 100)
                 
-                # Hotspot Categorization
-                def get_forecast_tier(cnt):
-                    if cnt <= 10: return "Low"
-                    if cnt <= 25: return "Medium"
-                    if cnt <= 50: return "High"
+                # Hotspot Categorization based on 0-100 score
+                def get_forecast_tier(score):
+                    if score <= 25: return "Low"
+                    if score <= 50: return "Medium"
+                    if score <= 80: return "High"
                     return "Critical"
                 
-                inference_df['Forecast_Category'] = inference_df['Predicted_Count'].apply(get_forecast_tier)
-                
-                # Merge coordinates
-                inference_df = inference_df.merge(impact_data[['Cluster_ID', 'latitude', 'longitude']], on='Cluster_ID', how='left')
+                inference_df['Forecast_Category'] = inference_df['Target_Severity'].apply(get_forecast_tier)
                 
                 st.subheader(f"Risk Map Forecast (Day {selected_day}, {selected_hour}:00)")
+                
+                # Ensure latitude/longitude exist for plotly
+                inference_df['latitude'] = inference_df['cluster_centroid_lat']
+                inference_df['longitude'] = inference_df['cluster_centroid_lon']
                 
                 # Plotly Map
                 fig_map = px.scatter_mapbox(
@@ -155,17 +257,17 @@ with tab2:
                     lat="latitude", 
                     lon="longitude", 
                     color="Forecast_Category",
-                    size="Predicted_Count",
+                    size="Target_Severity",
                     color_discrete_map={'Critical': 'red', 'High': 'orange', 'Medium': 'yellow', 'Low': 'green'},
                     hover_name="Cluster_ID",
-                    hover_data=["Predicted_Count"],
+                    hover_data=["Target_Severity", "violation_type", "police_station"],
                     mapbox_style="carto-positron",
                     zoom=11
                 )
                 fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_map, use_container_width=True)
                 
-                st.dataframe(inference_df[['Cluster_ID', 'Predicted_Count', 'Forecast_Category']].sort_values(by='Predicted_Count', ascending=False))
+                st.dataframe(inference_df[['Cluster_ID', 'Target_Severity', 'Forecast_Category', 'violation_type', 'police_station']].sort_values(by='Target_Severity', ascending=False))
                 
     else:
         st.warning("Model or Cluster data not found. Please run the model training pipeline.")

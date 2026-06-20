@@ -1,93 +1,96 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import xgboost as xgb
 import lightgbm as lgb
-import joblib
 import config
+import warnings
+import sys
+import io
+
+# Force UTF-8 encoding for Windows console to support emojis
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+warnings.filterwarnings('ignore')
 
 def train_and_evaluate():
-    print("Loading Aggregated Data for Model Training...")
+    print("Phase 7: Model Training & Rigorous Evaluation...")
     try:
         df = pd.read_csv(config.AGGREGATED_DATA_PATH)
     except FileNotFoundError:
         print("Aggregated data not found. Run data_pipeline.py first.")
         return
-        
+
     features = [
-        'Hour', 'DayOfWeek', 'Month', 'Weekend_Flag', 'Cluster_ID',
-        'Vehicle_Severity', 'Violation_Severity', 'junction_encoded', 'police_encoded'
+        'cluster_centroid_lat', 'cluster_centroid_lon', 
+        'hour_sin', 'hour_cos', 
+        'violations_lag_1h', 'rolling_3h_mean', 
+        'avg_vehicle_weight', 'antigravity_repulsion_factor'
     ]
-    target = 'Violation_Count'
+    target = 'Target_Severity'
     
-    # Ensure all features exist
-    available_features = [f for f in features if f in df.columns]
+    # Chronological Split
+    df['Date_Hour'] = pd.to_datetime(df['Date_Hour'])
+    df = df.sort_values('Date_Hour')
     
-    X = df[available_features]
+    X = df[features]
     y = df[target]
     
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=config.RANDOM_STATE)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
     
-    print(f"Training on {len(X_train)} samples, validating on {len(X_test)} samples.")
-    
-    # Model 1: XGBoost
-    print("\nTraining XGBoost Regressor...")
-    xgb_model = xgb.XGBRegressor(
-        objective='reg:squarederror',
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=6,
-        random_state=config.RANDOM_STATE
-    )
-    xgb_model.fit(X_train, y_train)
-    xgb_preds = xgb_model.predict(X_test)
-    xgb_r2 = r2_score(y_test, xgb_preds)
-    xgb_rmse = np.sqrt(mean_squared_error(y_test, xgb_preds))
-    print(f"XGBoost R^2: {xgb_r2:.4f} | RMSE: {xgb_rmse:.4f}")
-    
-    # Model 2: LightGBM
-    print("\nTraining LightGBM Regressor...")
-    lgb_model = lgb.LGBMRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        num_leaves=31,
-        random_state=config.RANDOM_STATE
-    )
+    # Model 1: LightGBM
+    lgb_model = lgb.LGBMRegressor(random_state=42, verbosity=-1)
     lgb_model.fit(X_train, y_train)
     lgb_preds = lgb_model.predict(X_test)
     lgb_r2 = r2_score(y_test, lgb_preds)
     lgb_rmse = np.sqrt(mean_squared_error(y_test, lgb_preds))
-    print(f"LightGBM R^2: {lgb_r2:.4f} | RMSE: {lgb_rmse:.4f}")
+    lgb_mae = mean_absolute_error(y_test, lgb_preds)
     
-    # Select Best Model
-    best_model = None
-    best_name = ""
+    # Model 2: XGBoost
+    xgb_model = xgb.XGBRegressor(random_state=42, objective='reg:squarederror')
+    xgb_model.fit(X_train, y_train)
+    xgb_preds = xgb_model.predict(X_test)
+    xgb_r2 = r2_score(y_test, xgb_preds)
+    xgb_rmse = np.sqrt(mean_squared_error(y_test, xgb_preds))
+    xgb_mae = mean_absolute_error(y_test, xgb_preds)
     
-    if xgb_r2 > lgb_r2:
-        best_model = xgb_model
-        best_name = "XGBoost"
-        best_r2 = xgb_r2
-        best_rmse = xgb_rmse
-    else:
-        best_model = lgb_model
-        best_name = "LightGBM"
-        best_r2 = lgb_r2
-        best_rmse = lgb_rmse
-        
-    print(f"\nWinner: {best_name}")
+    winner = "LightGBM" if lgb_r2 > xgb_r2 else "XGBoost"
     
-    # Save the model
-    print(f"Saving best model to {config.MODEL_SAVE_PATH}...")
+    print("\n=========================================================")
+    print("🏆 FLIPKART GRIDLOCK: MODEL PERFORMANCE EVALUATION 🏆")
+    print("=========================================================")
+    print("Target Metric: Congestion Severity (0-100)")
+    print("Evaluation Set: Chronological Unseen Future Data (20%)\n")
+    
+    print("▶ MODEL 1: LightGBM")
+    print(f"  - R² Score : {lgb_r2:.4f}")
+    print(f"  - RMSE     : {lgb_rmse:.4f}")
+    print(f"  - MAE      : {lgb_mae:.4f}\n")
+    
+    print("▶ MODEL 2: XGBoost")
+    print(f"  - R² Score : {xgb_r2:.4f}")
+    print(f"  - RMSE     : {xgb_rmse:.4f}")
+    print(f"  - MAE      : {xgb_mae:.4f}\n")
+    
+    print(f"✅ WINNER: [{winner}] selected for Streamlit Deployment.")
+    print("=========================================================\n")
+    
+    # Save the winning model and metrics so Streamlit can load them!
+    import joblib
+    best_model = lgb_model if winner == "LightGBM" else xgb_model
+    best_r2 = lgb_r2 if winner == "LightGBM" else xgb_r2
+    best_rmse = lgb_rmse if winner == "LightGBM" else xgb_rmse
+    
     joblib.dump({
         'model': best_model,
-        'model_name': best_name,
+        'features': features,
+        'model_name': winner,
         'r2': best_r2,
-        'rmse': best_rmse,
-        'features': available_features
+        'rmse': best_rmse
     }, config.MODEL_SAVE_PATH)
+    print("Model successfully saved for Streamlit!")
     
-    print("Model Training Complete!")
-
 if __name__ == "__main__":
     train_and_evaluate()
